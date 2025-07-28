@@ -33,7 +33,7 @@ dependencies = [
     "setuptools==68.0.0",
     "tenacity==8.2.3",
     "tiktoken>=0.7.0",
-    "tokenizers==0.15.0",
+    "tokenizers>=0.15.0",
     "pydantic>=2.3.0",
     "fire>=0.6.0",
     "matplotlib>=3.7.2",
@@ -46,6 +46,7 @@ dependencies = [
     "tqdm>=4.66.1",
     "pyarrow>=13.0.0",
     "transformers>=4.37.2",
+    "huggingface_hub>=0.20.0",
     "together==1.2.1",
 ]
 
