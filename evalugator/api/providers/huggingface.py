@@ -164,7 +164,8 @@ def _get_model_and_tokenizer(model_id: str):
             torch_dtype=torch.float16,
             device_map="auto",
             quantization_config=quantization_config,
-            trust_remote_code=True
+            trust_remote_code=True,
+            low_cpu_mem_usage=True,
         )
         
         _models[model_id] = model
