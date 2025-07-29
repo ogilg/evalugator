@@ -161,19 +161,13 @@ def _get_model_and_tokenizer(model_id: str):
             bnb_4bit_compute_dtype=torch.bfloat16 # Use bfloat16 for compute (faster than float16)
         )
 
-        # Set the device (replace 'cuda:0' with the appropriate GPU if you have multiple GPUs)
-        device = 'cuda:0'
-        # Set the device for PyTorch
-        torch.cuda.set_device(device)
-        
-        # Load model with quantization and proper device mapping
+        # Load model with quantization - let transformers handle device placement
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,  
-            low_cpu_mem_usage=False,
-            device_map={"": device},
+            quantization_config=quantization_config,
+            device_map="auto",  # Let transformers automatically handle device placement
+            torch_dtype=torch.bfloat16,
         )
-
-        model = model.to(device=device)
 
         torch.cuda.empty_cache()
         
@@ -227,6 +221,9 @@ def huggingface_get_text(model_id: str, request: GetTextRequest) -> GetTextRespo
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
     
+    # Move inputs to the same device as the model
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
         
     # Generate text
     max_new_tokens = request.max_tokens or 100
@@ -278,6 +275,10 @@ def huggingface_get_probs(model_id: str, request: GetProbsRequest) -> GetProbsRe
     
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
+    
+    # Move inputs to the same device as the model
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
     
     # Get logits for next token
     with no_grad():
