@@ -224,9 +224,12 @@ def huggingface_get_text(model_id: str, request: GetTextRequest) -> GetTextRespo
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
     
-    # Move inputs to the same device as the model
-    device = next(model.parameters()).device
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    # For quantized models, inputs should be on CPU and the model handles device placement
+    # Don't manually move inputs to device when using quantization
+    if not hasattr(model, 'is_loaded_in_4bit') or not model.is_loaded_in_4bit:
+        # For non-quantized models, move inputs to the same device as the model
+        device = next(model.parameters()).device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         
     # Generate text
     max_new_tokens = request.max_tokens or 100
@@ -279,9 +282,11 @@ def huggingface_get_probs(model_id: str, request: GetProbsRequest) -> GetProbsRe
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
     
-    # Move inputs to the same device as the model
-    device = next(model.parameters()).device
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    # For quantized models, inputs should be on CPU and the model handles device placement
+    if not hasattr(model, 'is_loaded_in_4bit') or not model.is_loaded_in_4bit:
+        # For non-quantized models, move inputs to the same device as the model
+        device = next(model.parameters()).device
+        inputs = {k: v.to(device) for k, v in inputs.items()}
     
     # Get logits for next token
     with no_grad():
