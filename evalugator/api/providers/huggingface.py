@@ -144,36 +144,40 @@ def decode(model_id: str, tokens: list[int]) -> str:
 def _get_model_and_tokenizer(model_id: str):
     """Get or load model and tokenizer using singleton pattern."""
     
+    import logging
+    logger = logging.getLogger("evalugator.huggingface")
+
     if model_id not in _models:
         hf_model_name = HUGGINGFACE_MODEL_MAPPING[model_id]
-        
+        logger.info(f"Loading HuggingFace model: {hf_model_name} (id: {model_id})")
+
         # Load tokenizer
         tokenizer = AutoTokenizer.from_pretrained(hf_model_name)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        
+
+        logger.info(f"Tokenizer loaded: {hf_model_name} (id: {model_id})")
+
         # Load model with memory optimization for 48GB GPU
-        # This configuration allows running models up to ~20GB efficiently
         quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,                    # Use 4-bit quantization (8x memory reduction)
-            bnb_4bit_use_double_quant=True,      # Double quantization for extra memory savings
-            bnb_4bit_quant_type="nf4",           # NormalFloat4 - better than FP4 for most models
-            bnb_4bit_compute_dtype=torch.bfloat16 # Use bfloat16 for compute (faster than float16)
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16
         )
-        
-        # Load model with quantization and proper device mapping
+
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,
-            torch_dtype=torch.bfloat16,           # Use bfloat16 for model weights (better than float16)
+            torch_dtype=torch.bfloat16,
             quantization_config=quantization_config,
             device_map={"": "cuda:0"},
             trust_remote_code=True,
             low_cpu_mem_usage=False,
-            max_memory={0: "40GB"},               # Reserve 8GB for activations and cache
+            max_memory={0: "40GB"},
         )
-        # Clear any cached memory from the loading process
+        logger.info(f"Model loaded: {hf_model_name} (id: {model_id})")
         torch.cuda.empty_cache()
-        
+
         _models[model_id] = model
         _tokenizers[model_id] = tokenizer
     
