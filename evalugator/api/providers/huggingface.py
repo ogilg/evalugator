@@ -166,8 +166,14 @@ def _get_model_and_tokenizer(model_id: str):
             hf_model_name,  
             low_cpu_mem_usage=False,
         )
-        model = model.to_empty(device=torch.device("cuda:0"))
-        # Clear any cached memory from the loading process
+        # Save state dict before to_empty
+        state_dict = model.state_dict()
+
+        # Move empty model to GPU
+        model = model.to_empty(device="cuda:0")
+
+        # Reload the weights on GPU
+        model.load_state_dict({k: v.cuda() for k, v in state_dict.items()})   
         torch.cuda.empty_cache()
         
         _models[model_id] = model
