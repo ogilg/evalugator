@@ -162,7 +162,7 @@ def _get_model_and_tokenizer(model_id: str):
         )
 
         # Set the device (replace 'cuda:0' with the appropriate GPU if you have multiple GPUs)
-        device = 'cpu'
+        device = 'cuda:0'
         # Set the device for PyTorch
         torch.cuda.set_device(device)
         
