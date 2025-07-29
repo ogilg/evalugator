@@ -167,6 +167,7 @@ def _get_model_and_tokenizer(model_id: str):
             quantization_config=quantization_config,
             device_map="auto",  # Let transformers automatically handle device placement
             torch_dtype=torch.bfloat16,
+            trust_remote_code=True,
         )
 
         torch.cuda.empty_cache()
