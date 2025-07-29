@@ -6,9 +6,10 @@ Uses local GPU models for both text generation and probability extraction.
 """
 
 from collections import Counter
+import queue
 import backoff
 from typing import Dict, Any
-
+import time
 import torch
 import torch.nn.functional as F
 from torch import no_grad, softmax, topk
@@ -160,16 +161,16 @@ def _get_model_and_tokenizer(model_id: str):
             bnb_4bit_compute_dtype=torch.bfloat16 # Use bfloat16 for compute (faster than float16)
         )
         
-        # Load model with quantization - let transformers handle everything
+        # Load model with quantization and proper device mapping
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,
+            torch_dtype=torch.bfloat16,           # Use bfloat16 for model weights (better than float16)
             quantization_config=quantization_config,
+            # device_map="auto",
             trust_remote_code=True,
-            device_map={"": "cuda:0"},
-            use_safetensors=True,
+            low_cpu_mem_usage=False,
             max_memory={0: "40GB"},               # Reserve 8GB for activations and cache
         )
-        
         # Clear any cached memory from the loading process
         torch.cuda.empty_cache()
         
@@ -223,15 +224,6 @@ def huggingface_get_text(model_id: str, request: GetTextRequest) -> GetTextRespo
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
     
-    # For models with device_map="auto", inputs should stay on CPU
-    # The model will handle device placement internally
-    if hasattr(model, 'hf_device_map') and model.hf_device_map is not None:
-        # Model uses device_map, keep inputs on CPU
-        pass
-    else:
-        # For models without device_map, move inputs to the same device as the model
-        device = next(model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
         
     # Generate text
     max_new_tokens = request.max_tokens or 100
@@ -283,16 +275,6 @@ def huggingface_get_probs(model_id: str, request: GetProbsRequest) -> GetProbsRe
     
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
-    
-    # For models with device_map="auto", inputs should stay on CPU
-    # The model will handle device placement internally
-    if hasattr(model, 'hf_device_map') and model.hf_device_map is not None:
-        # Model uses device_map, keep inputs on CPU
-        pass
-    else:
-        # For models without device_map, move inputs to the same device as the model
-        device = next(model.parameters()).device
-        inputs = {k: v.to(device) for k, v in inputs.items()}
     
     # Get logits for next token
     with no_grad():
