@@ -160,20 +160,20 @@ def _get_model_and_tokenizer(model_id: str):
             bnb_4bit_quant_type="nf4",           # NormalFloat4 - better than FP4 for most models
             bnb_4bit_compute_dtype=torch.bfloat16 # Use bfloat16 for compute (faster than float16)
         )
+
+        # Set the device (replace 'cuda:0' with the appropriate GPU if you have multiple GPUs)
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        # Set the device for PyTorch
+        torch.cuda.set_device(device)
         
         # Load model with quantization and proper device mapping
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,  
             low_cpu_mem_usage=False,
         )
-        # Save state dict before to_empty
-        state_dict = model.state_dict()
 
-        # Move empty model to GPU
-        model = model.to_empty(device="cuda:0")
+        model = model.to(device=device)
 
-        # Reload the weights on GPU
-        model.load_state_dict({k: v.cuda() for k, v in state_dict.items()})   
         torch.cuda.empty_cache()
         
         _models[model_id] = model
