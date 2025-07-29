@@ -164,7 +164,7 @@ def _get_model_and_tokenizer(model_id: str):
         # Load model with quantization - let transformers handle device placement
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,  
-            quantization_config=quantization_config,
+            # quantization_config=quantization_config,
             device_map="auto",  # Let transformers automatically handle device placement
             torch_dtype=torch.bfloat16,
             trust_remote_code=True,
