@@ -156,17 +156,23 @@ def _get_model_and_tokenizer(model_id: str):
         # Load model with memory optimization
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16 # Faster inference
         )
         
+        # Load model with quantization - don't use device_map with 4-bit quantization
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,
             torch_dtype=torch.float16,
-            device_map="auto",
             quantization_config=quantization_config,
             trust_remote_code=True,
             low_cpu_mem_usage=True,
         )
+        
+        # For quantized models, we need to handle device placement differently
+        # The model should already be on the correct device from the quantization config
+        # We'll let the quantization handle device placement automatically
         
         _models[model_id] = model
         _tokenizers[model_id] = tokenizer
@@ -217,9 +223,11 @@ def huggingface_get_text(model_id: str, request: GetTextRequest) -> GetTextRespo
     
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
-    if hasattr(model, 'device'):
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
     
+    # Move inputs to the same device as the model
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+        
     # Generate text
     max_new_tokens = request.max_tokens or 100
     
@@ -270,8 +278,10 @@ def huggingface_get_probs(model_id: str, request: GetProbsRequest) -> GetProbsRe
     
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
-    if hasattr(model, 'device'):
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+    
+    # Move inputs to the same device as the model
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
     
     # Get logits for next token
     with no_grad():
