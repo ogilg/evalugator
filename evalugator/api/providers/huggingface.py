@@ -163,8 +163,10 @@ def _get_model_and_tokenizer(model_id: str):
         
         # Load model with quantization and proper device mapping
         model = AutoModelForCausalLM.from_pretrained(
-            hf_model_name,           # Reserve 8GB for activations and cache
+            hf_model_name,  
+            low_cpu_mem_usage=False,
         )
+        model = model.to_empty(device=torch.device("cuda:0"))
         # Clear any cached memory from the loading process
         torch.cuda.empty_cache()
         
