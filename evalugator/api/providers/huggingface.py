@@ -100,7 +100,8 @@ def provides_model(model_id: str) -> bool:
     """Return True if this provider supports the given model_id."""
     if model_id.startswith("huggingface/"):
         model_id = model_id.split("/")[1]
-    return model_id in HUGGINGFACE_MODEL_MAPPING
+        return model_id in HUGGINGFACE_MODEL_MAPPING
+    return False
 
 
 def execute(model_id: str, request):
@@ -108,14 +109,13 @@ def execute(model_id: str, request):
     if not provides_model(model_id):
         raise NotImplementedError(f"Model {model_id} is not supported by HuggingFace provider")
     
-    # Extract actual model_id if prefixed
-    if model_id.startswith("huggingface/"):
-        model_id = model_id.split("/")[1]
+    # Extract actual model_id if prefixed (same pattern as replicate)
+    model_name = model_id.split("/")[1] if model_id.startswith("huggingface/") else model_id
     
     if isinstance(request, GetTextRequest):
-        return huggingface_get_text(model_id, request)
+        return huggingface_get_text(model_name, request)
     elif isinstance(request, GetProbsRequest):
-        return huggingface_get_probs(model_id, request)
+        return huggingface_get_probs(model_name, request)
     else:
         raise NotImplementedError(
             f"Request {type(request).__name__} for model {model_id} is not implemented"
@@ -124,21 +124,19 @@ def execute(model_id: str, request):
 
 def encode(model_id: str, data: str) -> list[int]:
     """Convert text to tokens - requires local model."""
-    # Extract actual model_id if prefixed
-    if model_id.startswith("huggingface/"):
-        model_id = model_id.split("/")[1]
+    # Extract actual model_id if prefixed (same pattern as replicate)
+    model_name = model_id.split("/")[1] if model_id.startswith("huggingface/") else model_id
     
-    tokenizer = _get_tokenizer(model_id)
+    tokenizer = _get_tokenizer(model_name)
     return tokenizer.encode(data)
 
 
 def decode(model_id: str, tokens: list[int]) -> str:
     """Convert tokens to text - requires local model."""
-    # Extract actual model_id if prefixed
-    if model_id.startswith("huggingface/"):
-        model_id = model_id.split("/")[1]
+    # Extract actual model_id if prefixed (same pattern as replicate)
+    model_name = model_id.split("/")[1] if model_id.startswith("huggingface/") else model_id
     
-    tokenizer = _get_tokenizer(model_id)
+    tokenizer = _get_tokenizer(model_name)
     return tokenizer.decode(tokens, skip_special_tokens=True)
 
 
@@ -153,26 +151,27 @@ def _get_model_and_tokenizer(model_id: str):
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         
-        # Load model with memory optimization
+        # Load model with memory optimization for 48GB GPU
+        # This configuration allows running models up to ~20GB efficiently
         quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16 # Faster inference
+            load_in_4bit=True,                    # Use 4-bit quantization (8x memory reduction)
+            bnb_4bit_use_double_quant=True,      # Double quantization for extra memory savings
+            bnb_4bit_quant_type="nf4",           # NormalFloat4 - better than FP4 for most models
+            bnb_4bit_compute_dtype=torch.bfloat16 # Use bfloat16 for compute (faster than float16)
         )
         
-        # Load model with quantization - don't use device_map with 4-bit quantization
+        # Load model with quantization - let transformers handle everything
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,
-            torch_dtype=torch.float16,
             quantization_config=quantization_config,
             trust_remote_code=True,
-            low_cpu_mem_usage=True,
+            device_map={"": "cuda:0"},
+            use_safetensors=True,
+            max_memory={0: "40GB"},               # Reserve 8GB for activations and cache
         )
         
-        # For quantized models, we need to handle device placement differently
-        # The model should already be on the correct device from the quantization config
-        # We'll let the quantization handle device placement automatically
+        # Clear any cached memory from the loading process
+        torch.cuda.empty_cache()
         
         _models[model_id] = model
         _tokenizers[model_id] = tokenizer
@@ -224,10 +223,13 @@ def huggingface_get_text(model_id: str, request: GetTextRequest) -> GetTextRespo
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
     
-    # For quantized models, inputs should be on CPU and the model handles device placement
-    # Don't manually move inputs to device when using quantization
-    if not hasattr(model, 'is_loaded_in_4bit') or not model.is_loaded_in_4bit:
-        # For non-quantized models, move inputs to the same device as the model
+    # For models with device_map="auto", inputs should stay on CPU
+    # The model will handle device placement internally
+    if hasattr(model, 'hf_device_map') and model.hf_device_map is not None:
+        # Model uses device_map, keep inputs on CPU
+        pass
+    else:
+        # For models without device_map, move inputs to the same device as the model
         device = next(model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
         
@@ -282,9 +284,13 @@ def huggingface_get_probs(model_id: str, request: GetProbsRequest) -> GetProbsRe
     # Tokenize input
     inputs = tokenizer(prompt_text, return_tensors="pt")
     
-    # For quantized models, inputs should be on CPU and the model handles device placement
-    if not hasattr(model, 'is_loaded_in_4bit') or not model.is_loaded_in_4bit:
-        # For non-quantized models, move inputs to the same device as the model
+    # For models with device_map="auto", inputs should stay on CPU
+    # The model will handle device placement internally
+    if hasattr(model, 'hf_device_map') and model.hf_device_map is not None:
+        # Model uses device_map, keep inputs on CPU
+        pass
+    else:
+        # For models without device_map, move inputs to the same device as the model
         device = next(model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
     
