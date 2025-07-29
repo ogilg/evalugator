@@ -166,7 +166,7 @@ def _get_model_and_tokenizer(model_id: str):
             hf_model_name,
             torch_dtype=torch.bfloat16,           # Use bfloat16 for model weights (better than float16)
             quantization_config=quantization_config,
-            # device_map="auto",
+            device_map={"": "cuda:0"},
             trust_remote_code=True,
             low_cpu_mem_usage=False,
             max_memory={0: "40GB"},               # Reserve 8GB for activations and cache
