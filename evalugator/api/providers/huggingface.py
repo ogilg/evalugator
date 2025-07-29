@@ -162,7 +162,7 @@ def _get_model_and_tokenizer(model_id: str):
         )
 
         # Set the device (replace 'cuda:0' with the appropriate GPU if you have multiple GPUs)
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        device = 'cpu'
         # Set the device for PyTorch
         torch.cuda.set_device(device)
         
@@ -170,6 +170,7 @@ def _get_model_and_tokenizer(model_id: str):
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_name,  
             low_cpu_mem_usage=False,
+            device_map={"": device},
         )
 
         model = model.to(device=device)
